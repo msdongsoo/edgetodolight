@@ -50,6 +50,7 @@ extension management page.
 - The default duration is **20 minutes**. Change it to **1-180 whole minutes** before starting.
 - Use **Start focus**, **Pause**, **Resume** and **Reset**.
 - At zero, the timer turns red, plays a short sound and shows a system notification.
+- Completion notifications may display the selected Todo title. Desktop and lock-screen visibility follow your operating system's notification settings.
 - Completing a focus session does not automatically check off the Todo.
 - Use **Test alert** to check your sound and notification settings.
 
@@ -77,6 +78,9 @@ in the application.
 - Local extension storage is not an encrypted secret vault. Do not store passwords or other secrets.
 - The default local storage quota is approximately 10MB. Failed saves are reported,
   and the last successfully persisted data remains intact.
+
+For details about local processing, notification visibility, backups and deletion,
+see the [Privacy Policy](PRIVACY.md).
 
 ## Development and verification
 
