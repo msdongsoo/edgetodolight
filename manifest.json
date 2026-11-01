@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Edge Todo Light",
+  "version": "1.0.0",
+  "description": "Daily Todos and a focus countdown, saved locally in this Edge profile.",
+  "permissions": ["storage", "alarms", "notifications", "offscreen", "sidePanel"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Open Todos and Focus Timer",
+    "default_icon": {
+      "16": "assets/icon-16.png",
+      "32": "assets/icon-32.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "app.html"
+  },
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  }
+}

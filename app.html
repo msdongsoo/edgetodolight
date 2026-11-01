@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <title>Edge Todo Light</title>
+    <link rel="icon" href="assets/icon-32.png">
+    <link rel="stylesheet" href="styles.css">
+    <script type="module" src="src/app.js"></script>
+  </head>
+  <body>
+    <main class="app">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">A LITTLE FOCUS, EVERY DAY</p>
+          <h1>My Todos</h1>
+        </div>
+        <span class="local-badge" title="Saved in this Edge profile without an external server">Local only</span>
+      </header>
+
+      <div id="error-banner" class="error-banner" role="alert" hidden>
+        <span id="error-message"></span>
+        <button id="dismiss-error" type="button" aria-label="Dismiss error">×</button>
+      </div>
+
+      <section id="timer-card" class="timer-card" aria-labelledby="timer-heading">
+        <div class="section-heading">
+          <h2 id="timer-heading">Focus Timer</h2>
+          <button id="test-alarm" class="text-button" type="button" disabled>Test alert</button>
+        </div>
+        <label class="field-label" for="focus-task">Focus Todo</label>
+        <select id="focus-task" disabled>
+          <option value="">Focus without a task</option>
+        </select>
+        <div class="timer-face">
+          <output id="timer-display" aria-label="Remaining focus time" aria-live="off">20:00</output>
+          <label class="duration-field">
+            <input id="focus-minutes" type="number" min="1" max="180" step="1" value="20" aria-label="Duration (minutes)" disabled>
+            <span>min</span>
+          </label>
+        </div>
+        <progress id="timer-progress" max="1" value="0" aria-label="Focus progress"></progress>
+        <p id="timer-message" class="timer-message" role="status">Choose one Todo and give it your attention.</p>
+        <p id="alarm-warning" class="alarm-warning" role="alert" hidden></p>
+        <div class="timer-controls">
+          <button id="timer-start" class="primary-button" type="button" disabled>Start focus</button>
+          <button id="timer-pause" class="secondary-button" type="button" hidden>Pause</button>
+          <button id="timer-reset" class="secondary-button" type="button" disabled>Reset</button>
+        </div>
+      </section>
+
+      <section class="todo-section" aria-labelledby="todo-heading">
+        <div class="section-heading">
+          <h2 id="todo-heading">Today's Todos</h2>
+          <button id="edit-templates" class="text-button" type="button" disabled>Edit daily Todos</button>
+        </div>
+        <div class="day-navigation">
+          <input id="history-date" type="date" aria-label="Todo date" disabled>
+          <button id="go-today" class="text-button" type="button" hidden>Today</button>
+          <span id="completion-count" class="completion-count">0 / 0 done</span>
+        </div>
+        <p id="history-notice" class="hint" hidden>This is a past record. Edit Todos in today's list.</p>
+        <form id="add-task-form" class="add-task-form">
+          <label class="sr-only" for="new-task">New Todo</label>
+          <input id="new-task" type="text" maxlength="200" placeholder="Add a new Todo..." autocomplete="off" required disabled>
+          <button id="add-task" class="primary-button" type="submit" aria-label="Add Todo" disabled>+</button>
+        </form>
+        <ul id="task-list" class="task-list" aria-label="Todo list"></ul>
+        <div id="empty-state" class="empty-state">
+          <span class="empty-symbol" aria-hidden="true">✓</span>
+          <p id="empty-message">What would you like to do today?</p>
+          <p class="hint">Daily Todos appear automatically each day.</p>
+        </div>
+      </section>
+
+      <footer class="app-footer">
+        <p>Saved in this Edge profile, even after closing Edge.</p>
+        <div class="backup-actions">
+          <button id="export-backup" class="text-button" type="button" disabled>Export backup</button>
+          <span aria-hidden="true">·</span>
+          <button id="import-backup" class="text-button" type="button" disabled>Import backup</button>
+          <input id="backup-file" type="file" accept=".json,application/json" hidden>
+        </div>
+      </footer>
+    </main>
+
+    <dialog id="templates-dialog" aria-labelledby="templates-heading">
+      <form id="templates-form">
+        <div class="section-heading">
+          <h2 id="templates-heading">Daily Todos</h2>
+          <button id="close-templates" class="icon-button" type="button" aria-label="Close daily Todo editor">×</button>
+        </div>
+        <p class="hint">Start with a fresh checklist each day. Changes apply from today; today's completed checks stay checked.</p>
+        <p class="dialog-error" role="alert" hidden></p>
+        <div id="template-list" class="template-list"></div>
+        <button id="add-template" class="text-button add-template" type="button">+ Add daily Todo</button>
+        <div class="dialog-actions">
+          <button id="cancel-templates" class="secondary-button" type="button">Cancel</button>
+          <button id="save-templates" class="primary-button" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="rename-dialog" aria-labelledby="rename-heading">
+      <form id="rename-form">
+        <h2 id="rename-heading">Edit Todo</h2>
+        <p id="rename-hint" class="hint"></p>
+        <p class="dialog-error" role="alert" hidden></p>
+        <label class="sr-only" for="rename-title">Todo title</label>
+        <input id="rename-title" type="text" maxlength="200" required>
+        <div class="dialog-actions">
+          <button id="cancel-rename" class="secondary-button" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="import-dialog" aria-labelledby="import-heading">
+      <form id="import-form">
+        <h2 id="import-heading">Restore backup?</h2>
+        <p class="hint">This replaces your current Todos and timer. Export a backup first if you want to keep them.</p>
+        <p class="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="cancel-import" class="secondary-button" type="button">Cancel</button>
+          <button class="primary-button" type="submit">Restore backup</button>
+        </div>
+      </form>
+    </dialog>
+  </body>
+</html>
