@@ -1,5 +1,7 @@
 # Edge Todo Light
 
+**[Install from Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/edge-todo-light/nhljgofjkonkljebhbbalbpofnaainmj)**
+
 A local-only Todo list and focus countdown for the Edge sidebar.
 The entire application interface is in English. User-entered Todo titles are
 preserved as written, in any language.
@@ -7,6 +9,12 @@ Everything is saved with `chrome.storage.local`; no server, external database,
 account or sign-in is required.
 
 ## Install in Edge
+
+For normal use, install the published version using the store link above.
+The development source may include features not yet released in the store.
+Pushing commits to GitHub does not automatically publish a store update.
+
+### Load unpacked (development)
 
 Download this repository using **Code > Download ZIP** and extract it, or clone it:
 
