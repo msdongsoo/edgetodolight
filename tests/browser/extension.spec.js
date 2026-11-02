@@ -71,12 +71,180 @@ test("loads the actual extension, opens by toolbar action, and persists checkbox
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   expect(await page.locator("body").innerText()).not.toMatch(/[\uac00-\ud7a3]/u);
   await expect(page.locator("#timer-display")).toHaveText("20:00");
+  await expect(page.getByRole("button", { name: "Done last", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Hide done", exact: true })).toHaveAttribute("aria-pressed", "false");
   await addTask("My first Todo");
   await page.getByRole("checkbox", { name: "My first Todo complete", exact: true }).check();
   await expect(page.locator("#completion-count")).toHaveText("1 / 1 done");
   await page.reload();
   await expect(page.getByRole("checkbox", { name: "My first Todo complete", exact: true })).toBeChecked();
   await expect(page.locator(".task-row")).toHaveClass(/is-done/);
+});
+
+test("compact header icons stay on one line and show On/Off states for mouse and keyboard", async () => {
+  await addTask("Completed example");
+  await addTask("Next task");
+  await page.getByRole("checkbox", { name: "Completed example complete", exact: true }).check();
+  const daily = page.getByRole("button", { name: "Edit daily Todos", exact: true });
+  const sort = page.getByRole("button", { name: "Done last", exact: true });
+  const filter = page.getByRole("button", { name: "Hide done", exact: true });
+  await expect(page.locator(".todo-toolbar button")).toHaveCount(3);
+  await expect(page.locator(".todo-toolbar")).toHaveText("");
+  await expect(page.locator(".list-options")).toHaveCount(0);
+  await expect(sort).toHaveAttribute("title", "Done last: Off. Click to turn on.");
+  await expect(filter).toHaveAttribute("title", "Hide done: Off. Click to turn on.");
+  const offBackground = await filter.evaluate((button) => getComputedStyle(button).backgroundColor);
+  for (const width of [280, 320, 440]) {
+    await page.setViewportSize({ width, height: 850 });
+    const layout = await page.locator(".todo-section > .section-heading").evaluate((header) => {
+      const heading = header.querySelector("h2").getBoundingClientRect();
+      const toolbar = header.querySelector(".todo-toolbar").getBoundingClientRect();
+      return {
+        headingRight: heading.right,
+        headingCenter: heading.top + heading.height / 2,
+        toolbarLeft: toolbar.left,
+        toolbarWidth: toolbar.width,
+        buttons: [...header.querySelectorAll("button")].map((button) => {
+          const rect = button.getBoundingClientRect();
+          return { width: rect.width, height: rect.height, center: rect.top + rect.height / 2 };
+        }),
+        contentWidth: document.documentElement.scrollWidth
+      };
+    });
+    expect(layout.headingRight).toBeLessThan(layout.toolbarLeft);
+    expect(layout.toolbarWidth).toBeLessThanOrEqual(92);
+    expect(layout.contentWidth).toBeLessThanOrEqual(width);
+    for (const button of layout.buttons) {
+      expect(button.width).toBeGreaterThanOrEqual(24);
+      expect(button.width).toBeLessThanOrEqual(28);
+      expect(button.height).toBe(28);
+      expect(Math.abs(button.center - layout.headingCenter)).toBeLessThan(1);
+    }
+  }
+  await sort.focus();
+  await sort.press("Space");
+  await expect(sort).toHaveAttribute("aria-pressed", "true");
+  await expect(sort).toHaveAttribute("title", "Done last: On. Click to turn off.");
+  await expect(sort).toBeFocused();
+  await expect(page.locator(".task-title")).toHaveText(["Next task", "Completed example"]);
+  await page.keyboard.press("Tab");
+  await expect(filter).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(filter).toHaveAttribute("aria-pressed", "true");
+  await expect(filter).toHaveAttribute("title", "Hide done: On. Click to turn off.");
+  await expect(filter).toBeFocused();
+  await expect(page.locator(".task-title")).toHaveText(["Next task"]);
+  const onStyle = await filter.evaluate((button) => ({
+    background: getComputedStyle(button).backgroundColor,
+    indicator: getComputedStyle(button, "::after").content,
+    indicatorWidth: getComputedStyle(button, "::after").width
+  }));
+  expect(onStyle.background).not.toBe(offBackground);
+  expect(onStyle.indicator).toBe('""');
+  expect(onStyle.indicatorWidth).toBe("4px");
+  await filter.press("Space");
+  await expect(filter).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator(".task-row")).toHaveCount(2);
+  await sort.locator("svg").click();
+  await expect(sort).toHaveAttribute("aria-pressed", "false");
+  await expect(sort).toHaveAttribute("title", "Done last: Off. Click to turn on.");
+  await expect(page.locator(".task-title")).toHaveText(["Completed example", "Next task"]);
+  await daily.locator("svg").click();
+  await expect(page.locator("#templates-dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.locator("#templates-dialog")).not.toBeVisible();
+});
+
+test("Done last stably moves completed tasks down and switching it off restores original order", async () => {
+  const titles = ["First done", "First open", "Second done", "Second open"];
+  for (const title of titles) await addTask(title);
+  for (const title of ["First done", "Second done"]) {
+    await page.getByRole("checkbox", { name: `${title} complete`, exact: true }).check();
+  }
+  await expect(page.locator(".task-title")).toHaveText(titles);
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["First open", "Second open", "First done", "Second done"]);
+  await expect(page.locator("#completion-count")).toHaveText("2 / 4 done");
+  const saved = (await send({ type: "state.get" })).state;
+  expect(saved.days[saved.currentDate].map((task) => task.title)).toEqual(titles);
+  await page.getByRole("checkbox", { name: "Second open complete", exact: true }).check();
+  await expect(page.locator(".task-title")).toHaveText(["First open", "First done", "Second done", "Second open"]);
+  await expect(page.getByRole("checkbox", { name: "Second open complete", exact: true })).toBeFocused();
+  await page.getByRole("checkbox", { name: "First done complete", exact: true }).uncheck();
+  await expect(page.locator(".task-title")).toHaveText(["First done", "First open", "Second done", "Second open"]);
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(titles);
+  await expect(page.locator("#completion-count")).toHaveText("2 / 4 done");
+});
+
+test("Hide done filters immediately, keeps the full count and restores completed items when disabled", async () => {
+  for (const title of ["Finished task", "Active task", "Another finished task"]) await addTask(title);
+  for (const title of ["Finished task", "Another finished task"]) {
+    await page.getByRole("checkbox", { name: `${title} complete`, exact: true }).check();
+  }
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Active task"]);
+  await expect(page.locator("#completion-count")).toHaveText("2 / 3 done");
+  await expect(page.locator("#list-filter-status")).toHaveText("2 completed Todos hidden.");
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Active task"]);
+  await addTask("New active task");
+  await expect(page.locator(".task-title")).toHaveText(["Active task", "New active task"]);
+  await expect(page.locator("#completion-count")).toHaveText("2 / 4 done");
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Active task", "New active task", "Finished task", "Another finished task"]);
+  await expect(page.getByRole("checkbox", { name: "Finished task complete", exact: true })).toBeChecked();
+  await expect(page.locator("#list-filter-status")).not.toBeVisible();
+});
+
+test("checking all visible tasks shows the filtered all-done message without deleting data", async () => {
+  await addTask("Finish first");
+  await addTask("Finish second");
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await page.getByRole("checkbox", { name: "Finish first complete", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Finish second"]);
+  await expect(page.locator("#list-filter-status")).toHaveText("1 completed Todo hidden.");
+  await page.getByRole("checkbox", { name: "Finish second complete", exact: true }).click();
+  await expect(page.locator(".task-row")).toHaveCount(0);
+  await expect(page.locator("#empty-message")).toHaveText("All Todos are done.");
+  await expect(page.locator("#empty-hint")).toHaveText("Click the filter icon to see completed Todos.");
+  await expect(page.locator("#completion-count")).toHaveText("2 / 2 done");
+  await expect(page.getByRole("button", { name: "Hide done", exact: true })).toBeFocused();
+  const saved = (await send({ type: "state.get" })).state;
+  expect(saved.days[saved.currentDate].length).toBe(2);
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Finish first", "Finish second"]);
+  await expect(page.locator("#empty-state")).not.toBeVisible();
+  await page.getByRole("checkbox", { name: "Finish first complete", exact: true }).uncheck();
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Finish first"]);
+});
+
+test("legacy stored data and backups gain disabled options without losing existing completion", async () => {
+  let legacy = applyCommand(createState(), { type: "task.add", title: "From version 1.0.0" });
+  legacy = applyCommand(legacy, { type: "task.toggle", id: legacy.days[legacy.currentDate][0].id, done: true });
+  delete legacy.listOptions;
+  await worker.evaluate(({ key, state }) => chrome.storage.local.set({ [key]: state }), { key: STORAGE_KEY, state: legacy });
+  await page.reload();
+  await expect(page.getByRole("checkbox", { name: "From version 1.0.0 complete", exact: true })).toBeChecked();
+  await expect(page.getByRole("button", { name: "Done last", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Hide done", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#error-banner")).not.toBeVisible();
+  const migrated = (await send({ type: "state.get" })).state;
+  expect(migrated.listOptions).toEqual({ doneLast: false, hideDone: false });
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.locator("#empty-message")).toHaveText("All Todos are done.");
+  await page.locator("#backup-file").setInputFiles({
+    name: "legacy-backup.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(makeBackup(legacy)))
+  });
+  await page.getByRole("button", { name: "Restore backup", exact: true }).click();
+  await expect(page.locator("#import-dialog")).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "Hide done", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Done last", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("checkbox", { name: "From version 1.0.0 complete", exact: true })).toBeChecked();
 });
 
 test("edits daily templates and preserves today's completion check", async () => {
@@ -128,6 +296,8 @@ test("invalid entered duration shows an English error without starting the old d
 
 test("retains Todo data and the running countdown across a full browser restart", async () => {
   await addTask("Keep this Todo after closing Edge");
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
   await page.getByRole("button", { name: "Start focus", exact: true }).click();
   await expect(page.getByRole("button", { name: "Pause", exact: true })).toBeEnabled();
   const before = (await send({ type: "state.get" })).state;
@@ -139,6 +309,9 @@ test("retains Todo data and the running countdown across a full browser restart"
   expect(after.timer.status).toBe("running");
   expect(after.timer.endAt).toBe(before.timer.endAt);
   expect(after.days[after.currentDate][0].id).toBe(before.days[before.currentDate][0].id);
+  expect(after.listOptions).toEqual({ doneLast: true, hideDone: true });
+  await expect(page.getByRole("button", { name: "Done last", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Hide done", exact: true })).toHaveAttribute("aria-pressed", "true");
   const alarm = await worker.evaluate(() => chrome.alarms.get("edge-todo-focus"));
   expect(alarm.scheduledTime).toBe(before.timer.endAt);
 });
@@ -161,6 +334,14 @@ test("a new day resets common checks, carries unfinished additions and keeps rea
   await expect(page.getByRole("checkbox", { name: "Daily work complete", exact: true })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Daily work complete", exact: true })).toBeDisabled();
   await expect(page.locator("#add-task-form")).not.toBeVisible();
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Unfinished work", "Daily work"]);
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Unfinished work"]);
+  await expect(page.locator("#completion-count")).toHaveText("1 / 2 done");
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.getByRole("checkbox", { name: "Daily work complete", exact: true })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Daily work complete", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await expect(page.locator("#add-task-form")).toBeVisible();
 });
@@ -173,6 +354,21 @@ test("updates multiple open views without losing concurrent additions", async ()
       second.evaluate(() => chrome.runtime.sendMessage({ target: "background", command: { type: "task.add", title: "Second window" } }))
     ]);
     expect(responses.every((response) => response.ok)).toBe(true);
+    await expect(page.locator(".task-row")).toHaveCount(2);
+    await expect(second.locator(".task-row")).toHaveCount(2);
+    const preferences = await Promise.all([
+      page.evaluate(() => chrome.runtime.sendMessage({ target: "background", command: { type: "list.option", name: "doneLast", enabled: true } })),
+      second.evaluate(() => chrome.runtime.sendMessage({ target: "background", command: { type: "list.option", name: "hideDone", enabled: true } }))
+    ]);
+    expect(preferences.every((response) => response.ok)).toBe(true);
+    for (const view of [page, second]) {
+      await expect(view.getByRole("button", { name: "Done last", exact: true })).toHaveAttribute("aria-pressed", "true");
+      await expect(view.getByRole("button", { name: "Hide done", exact: true })).toHaveAttribute("aria-pressed", "true");
+    }
+    await page.getByRole("checkbox", { name: "First window complete", exact: true }).click();
+    await expect(page.locator(".task-title")).toHaveText(["Second window"]);
+    await expect(second.locator(".task-title")).toHaveText(["Second window"]);
+    await second.getByRole("button", { name: "Hide done", exact: true }).click();
     await expect(page.locator(".task-row")).toHaveCount(2);
     await expect(second.locator(".task-row")).toHaveCount(2);
   } finally {
@@ -269,5 +465,10 @@ test("renders titles as text, displays template validation errors, and fits a na
   await addTask("Write the project plan");
   await page.getByRole("button", { name: "Write the project plan Focus", exact: true }).click();
   await expect(page.locator("#focus-task")).not.toHaveValue("");
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await expect(page.locator(".task-row")).toHaveCount(2);
+  const toolbarRight = await page.locator(".todo-toolbar").evaluate((toolbar) => toolbar.getBoundingClientRect().right);
+  expect(toolbarRight).toBeLessThanOrEqual(320);
   await page.screenshot({ path: join(extensionPath, "test-results", "sidebar.png"), fullPage: true });
 });

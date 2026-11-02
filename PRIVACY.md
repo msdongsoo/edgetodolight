@@ -12,6 +12,7 @@ Edge profile using `chrome.storage.local`:
 
 - Todo titles, daily recurring templates and date-based Todo history.
 - Completion status, creation and completion timestamps, and carry-over dates.
+- List view preferences for placing completed Todos last or hiding them.
 - Focus timer settings and state, including the selected Todo, duration,
   deadline, pause state and notification status.
 
@@ -42,7 +43,8 @@ privacy policies and settings.
 
 ## Backup files
 
-Exporting a backup creates a JSON file containing your Todo and timer data.
+Exporting a backup creates a JSON file containing your Todo data, list view
+preferences and timer data.
 Importing reads the backup file you explicitly select and replaces the
 extension's current local data. The extension does not upload these files.
 
@@ -60,6 +62,8 @@ retained locally; there is no automatic expiration.
 You can edit or remove Todos from today's list and manage daily templates.
 Removing an item from today's list does not erase past records. Removing a
 daily template stops future occurrences but does not erase past records.
+Sorting or hiding completed Todos changes only their display and does not
+delete any Todo data or history.
 
 To remove all data stored by the extension, clear its local extension storage
 or uninstall it. Delete any exported backup files separately if you no longer

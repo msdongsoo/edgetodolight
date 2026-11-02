@@ -1,4 +1,4 @@
-import { STORAGE_KEY, localDateKey, makeBackup, remainingTime, validateState } from "./model.js";
+import { DEFAULT_LIST_OPTIONS, STORAGE_KEY, getVisibleTasks, localDateKey, makeBackup, remainingTime, validateState } from "./model.js";
 
 const element = (id) => document.getElementById(id);
 let state;
@@ -60,7 +60,7 @@ function renderControls() {
   const ready = Boolean(state) && !busy;
   const current = ready && selectedDate === state.currentDate;
   const active = state && ["running", "paused"].includes(state.timer.status);
-  for (const id of ["test-alarm", "edit-templates", "history-date", "export-backup", "import-backup"]) {
+  for (const id of ["test-alarm", "edit-templates", "history-date", "done-last", "hide-done", "export-backup", "import-backup"]) {
     element(id).disabled = !ready;
   }
   for (const id of ["new-task", "add-task"]) element(id).disabled = !current;
@@ -123,10 +123,12 @@ function tag(text, focus = false) {
 
 function renderTasks() {
   const tasks = state.days[selectedDate] ?? [];
+  const visibleTasks = getVisibleTasks(tasks, state.listOptions);
+  const hiddenCount = tasks.length - visibleTasks.length;
   const current = selectedDate === state.currentDate;
   const list = element("task-list");
   list.replaceChildren();
-  for (const task of tasks) {
+  for (const task of visibleTasks) {
     const row = document.createElement("li");
     row.className = `task-row${task.done ? " is-done" : ""}`;
     row.dataset.id = task.id;
@@ -157,9 +159,13 @@ function renderTasks() {
     list.append(row);
   }
   element("completion-count").textContent = `${tasks.filter((task) => task.done).length} / ${tasks.length} done`;
-  element("empty-state").hidden = tasks.length > 0;
-  element("empty-message").textContent = current ? "What would you like to do today?" : "No Todos were saved for this date.";
-  element("empty-state").querySelector(".hint").hidden = !current;
+  element("list-filter-status").hidden = hiddenCount === 0;
+  element("list-filter-status").textContent = hiddenCount > 0 ? `${hiddenCount} completed ${hiddenCount === 1 ? "Todo" : "Todos"} hidden.` : "";
+  element("empty-state").hidden = visibleTasks.length > 0;
+  const allDoneHidden = hiddenCount > 0 && visibleTasks.length === 0;
+  element("empty-message").textContent = allDoneHidden ? "All Todos are done." : current ? "What would you like to do today?" : "No Todos were saved for this date.";
+  element("empty-hint").textContent = allDoneHidden ? "Click the filter icon to see completed Todos." : "Daily Todos appear automatically each day.";
+  element("empty-hint").hidden = !current && !allDoneHidden;
   element("history-notice").hidden = current;
   element("add-task-form").hidden = !current;
   element("go-today").hidden = current;
@@ -167,6 +173,13 @@ function renderTasks() {
 }
 
 function render() {
+  const listOptions = state.listOptions ?? DEFAULT_LIST_OPTIONS;
+  for (const [id, name] of [["done-last", "doneLast"], ["hide-done", "hideDone"]]) {
+    const button = element(id);
+    const enabled = listOptions[name];
+    button.setAttribute("aria-pressed", String(enabled));
+    button.title = `${button.getAttribute("aria-label")}: ${enabled ? "On" : "Off"}. Click to turn ${enabled ? "off" : "on"}.`;
+  }
   element("history-date").max = state.currentDate;
   element("history-date").value = selectedDate;
   if (document.activeElement !== element("focus-minutes")) element("focus-minutes").value = state.timer.durationMinutes;
@@ -224,10 +237,23 @@ element("add-task-form").addEventListener("submit", (event) => {
 element("task-list").addEventListener("change", (event) => {
   if (!event.target.matches(".task-checkbox")) return;
   const id = event.target.closest(".task-row").dataset.id;
-  void perform(() => request({ type: "task.toggle", id, done: event.target.checked })).then(() => {
+  const done = event.target.checked;
+  void perform(() => request({ type: "task.toggle", id, done })).then(() => {
     if (state) render();
+    const row = [...element("task-list").children].find((item) => item.dataset.id === id);
+    (row?.querySelector(".task-checkbox") ?? element("hide-done")).focus();
   });
 });
+
+for (const [id, name] of [["done-last", "doneLast"], ["hide-done", "hideDone"]]) {
+  element(id).addEventListener("click", () => {
+    const enabled = element(id).getAttribute("aria-pressed") !== "true";
+    void perform(() => request({ type: "list.option", name, enabled })).then(() => {
+      if (state) render();
+      element(id).focus();
+    });
+  });
+}
 
 element("task-list").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action]");

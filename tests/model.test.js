@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
-  DEFAULT_MINUTES, MAX_MINUTES, applyCommand, createState, localDateKey,
+  DEFAULT_MINUTES, MAX_MINUTES, applyCommand, createState, getVisibleTasks, localDateKey,
   makeBackup, nextMidnight, reconcileState, remainingTime, validateState
 } from "../src/model.js";
 
@@ -24,7 +24,119 @@ test("starts with an empty local day and a 20 minute countdown", () => {
   assert.deepEqual(state.days[state.currentDate], []);
   assert.equal(state.timer.durationMinutes, DEFAULT_MINUTES);
   assert.equal(remainingTime(state.timer), 20 * 60_000);
+  assert.deepEqual(state.listOptions, { doneLast: false, hideDone: false });
   assert.equal(validateState(state), state);
+});
+
+test("Done last is stable, opt-in, and never reorders the stored tasks", () => {
+  const tasks = Object.freeze([
+    { id: "done-first", done: true },
+    { id: "open-first", done: false },
+    { id: "done-second", done: true },
+    { id: "open-second", done: false }
+  ]);
+  const original = tasks.map((task) => task.id);
+  assert.deepEqual(getVisibleTasks(tasks).map((task) => task.id), original);
+  assert.deepEqual(getVisibleTasks(tasks, { doneLast: true, hideDone: false }).map((task) => task.id), [
+    "open-first", "open-second", "done-first", "done-second"
+  ]);
+  assert.deepEqual(tasks.map((task) => task.id), original);
+  assert.deepEqual(getVisibleTasks(tasks, { doneLast: false, hideDone: false }).map((task) => task.id), original);
+  assert.notEqual(getVisibleTasks(tasks), tasks);
+});
+
+test("Hide done works alone or with sorting and keeps the original completed items intact", () => {
+  const tasks = Object.freeze([{ id: "done", done: true }, { id: "open", done: false }]);
+  for (const doneLast of [false, true]) {
+    const options = { doneLast, hideDone: true };
+    assert.deepEqual(getVisibleTasks(tasks, options), [tasks[1]]);
+    assert.deepEqual(getVisibleTasks([], options), []);
+    assert.deepEqual(getVisibleTasks([tasks[0]], options), []);
+    assert.deepEqual(getVisibleTasks([tasks[1]], options), [tasks[1]]);
+  }
+  assert.equal(tasks.length, 2);
+  assert.equal(tasks[0].done, true);
+  assert.deepEqual(getVisibleTasks(tasks, { doneLast: false, hideDone: false }), tasks);
+});
+
+test("list options update independently without changing Todos or a running timer", () => {
+  let state = command(createState(dayOne), { type: "templates.save", templates });
+  state = command(state, { type: "timer.start" });
+  const previous = structuredClone(state);
+  let next = command(state, { type: "list.option", name: "doneLast", enabled: true });
+  assert.deepEqual(next.listOptions, { doneLast: true, hideDone: false });
+  next = command(next, { type: "list.option", name: "hideDone", enabled: true });
+  assert.deepEqual(next.listOptions, { doneLast: true, hideDone: true });
+  next = command(next, { type: "list.option", name: "doneLast", enabled: false });
+  assert.deepEqual(next.listOptions, { doneLast: false, hideDone: true });
+  assert.deepEqual(next.days, previous.days);
+  assert.deepEqual(next.templates, previous.templates);
+  assert.deepEqual(next.timer, previous.timer);
+  assert.deepEqual(state, previous);
+  for (const value of [
+    { name: "unknown", enabled: true },
+    { name: "__proto__", enabled: true },
+    { name: "hideDone", enabled: "yes" },
+    { name: "doneLast", enabled: null },
+    { name: "doneLast" }
+  ]) {
+    assert.throws(() => command(state, { type: "list.option", ...value }));
+  }
+  assert.deepEqual(state, previous);
+});
+
+test("legacy profiles gain disabled list options without resetting Todo or timer data", () => {
+  let legacy = command(createState(dayOne), { type: "templates.save", templates });
+  legacy = command(legacy, { type: "task.toggle", id: legacy.days[legacy.currentDate][0].id, done: true });
+  legacy = command(legacy, { type: "timer.start" });
+  delete legacy.listOptions;
+  const previous = structuredClone(legacy);
+  assert.equal(validateState(legacy), legacy);
+  const migrated = reconcileState(legacy, dayOne + 1000);
+  assert.deepEqual(migrated.listOptions, { doneLast: false, hideDone: false });
+  assert.deepEqual(migrated.days, previous.days);
+  assert.deepEqual(migrated.timer, previous.timer);
+  assert.deepEqual(legacy, previous);
+  assert.equal(reconcileState(migrated, dayOne + 1000), migrated);
+});
+
+test("view settings persist across day rollover while daily completion still resets", () => {
+  let state = command(createState(dayOne), { type: "templates.save", templates });
+  state = command(state, { type: "task.toggle", id: state.days[state.currentDate][0].id, done: true });
+  state = command(state, { type: "list.option", name: "doneLast", enabled: true });
+  state = command(state, { type: "list.option", name: "hideDone", enabled: true });
+  const next = reconcileState(state, dayTwo);
+  assert.deepEqual(next.listOptions, { doneLast: true, hideDone: true });
+  assert.equal(next.days["2026-11-01"][0].done, true);
+  assert.equal(next.days[next.currentDate].some((task) => task.done), false);
+  assert.equal(getVisibleTasks(next.days[next.currentDate], next.listOptions).length, 2);
+});
+
+test("backups retain view settings and legacy backups restore with both options off", () => {
+  let state = command(createState(dayOne), { type: "templates.save", templates });
+  state = command(state, { type: "list.option", name: "doneLast", enabled: true });
+  state = command(state, { type: "list.option", name: "hideDone", enabled: true });
+  const backup = makeBackup(state, dayOne);
+  assert.deepEqual(command(createState(dayOne), { type: "backup.import", backup }), state);
+  const legacyBackup = structuredClone(backup);
+  delete legacyBackup.state.listOptions;
+  const restored = command(state, { type: "backup.import", backup: legacyBackup });
+  assert.deepEqual(restored.listOptions, { doneLast: false, hideDone: false });
+  assert.deepEqual(restored.days, state.days);
+  assert.deepEqual(restored.timer, state.timer);
+});
+
+test("malformed saved view settings are reported instead of being silently reset", () => {
+  const original = createState(dayOne);
+  for (const listOptions of [null, true, [], {}, { doneLast: "yes", hideDone: false }, { doneLast: false, hideDone: null }]) {
+    const corrupt = { ...original, listOptions };
+    assert.throws(() => validateState(corrupt), /Invalid Todo list options/);
+    assert.throws(() => command(original, {
+      type: "backup.import",
+      backup: { format: "edge-todo-light", state: corrupt }
+    }), /Invalid Todo list options/);
+  }
+  assert.deepEqual(original, createState(dayOne));
 });
 
 test("uses local calendar dates and schedules the next local midnight", () => {

@@ -53,7 +53,24 @@
       <section class="todo-section" aria-labelledby="todo-heading">
         <div class="section-heading">
           <h2 id="todo-heading">Today's Todos</h2>
-          <button id="edit-templates" class="text-button" type="button" disabled>Edit daily Todos</button>
+          <div class="todo-toolbar" role="group" aria-label="Todo actions">
+            <button id="edit-templates" class="icon-button" type="button" aria-label="Edit daily Todos" title="Daily Todos: edit recurring tasks" aria-haspopup="dialog" aria-controls="templates-dialog" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+                <path d="M7 3v4M17 3v4M3 10h18M8 15h8M8 18h5"></path>
+              </svg>
+            </button>
+            <button id="done-last" class="icon-button" type="button" aria-label="Done last" title="Done last: Off. Click to turn on." aria-pressed="false" aria-controls="task-list" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 4v16m-3-3 3 3 3-3M12 5h8M12 10h6M12 15h4"></path>
+              </svg>
+            </button>
+            <button id="hide-done" class="icon-button" type="button" aria-label="Hide done" title="Hide done: Off. Click to turn on." aria-pressed="false" aria-controls="task-list" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M3 5h18l-7 8v6l-4 2v-8z"></path>
+              </svg>
+            </button>
+          </div>
         </div>
         <div class="day-navigation">
           <input id="history-date" type="date" aria-label="Todo date" disabled>
@@ -61,6 +78,7 @@
           <span id="completion-count" class="completion-count">0 / 0 done</span>
         </div>
         <p id="history-notice" class="hint" hidden>This is a past record. Edit Todos in today's list.</p>
+        <p id="list-filter-status" class="sr-only" role="status" hidden></p>
         <form id="add-task-form" class="add-task-form">
           <label class="sr-only" for="new-task">New Todo</label>
           <input id="new-task" type="text" maxlength="200" placeholder="Add a new Todo..." autocomplete="off" required disabled>
@@ -70,7 +88,7 @@
         <div id="empty-state" class="empty-state">
           <span class="empty-symbol" aria-hidden="true">✓</span>
           <p id="empty-message">What would you like to do today?</p>
-          <p class="hint">Daily Todos appear automatically each day.</p>
+          <p id="empty-hint" class="hint">Daily Todos appear automatically each day.</p>
         </div>
       </section>
 

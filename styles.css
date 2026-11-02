@@ -72,6 +72,8 @@ progress::-webkit-progress-value { background: #75a67f; border-radius: 10px; tra
 .day-navigation { margin: 13px 0; justify-content: flex-start; flex-wrap: wrap; }
 input[type="date"] { border: 0; background: transparent; color: var(--muted); font-size: 11px; max-width: 130px; padding: 2px 0; }
 .completion-count { margin-left: auto; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.todo-section > .section-heading h2 { white-space: nowrap; }
+.todo-toolbar { display: flex; gap: 4px; flex-shrink: 0; }
 .add-task-form { display: flex; gap: 7px; margin-bottom: 13px; }
 .add-task-form input { flex: 1; min-width: 0; background: #fff; }
 .add-task-form button { font-size: 21px; padding: 4px 13px; }
@@ -91,6 +93,9 @@ input[type="date"] { border: 0; background: transparent; color: var(--muted); fo
 .icon-button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .icon-button:hover:not(:disabled) { background: #e8eee3; color: var(--green); }
 .icon-button[data-action="delete"]:hover { color: #b92b25; background: #f9e6e1; }
+.todo-toolbar .icon-button { position: relative; width: 28px; height: 28px; border: 1px solid transparent; color: #697b65; }
+.todo-toolbar .icon-button[aria-pressed="true"] { background: #e5eee4; border-color: #94bd9d; color: var(--green-dark); }
+.todo-toolbar .icon-button[aria-pressed="true"]::after { content: ""; position: absolute; top: 2px; right: 2px; width: 4px; height: 4px; border-radius: 50%; background: var(--green); }
 .empty-state { text-align: center; padding: 27px 8px 18px; color: var(--muted); font-size: 12px; }
 .empty-symbol { display: inline-flex; align-items: center; justify-content: center; border: 1px dashed #c7d3c1; width: 39px; height: 39px; border-radius: 50%; color: #98b18b; font-size: 20px; }
 .hint { color: var(--muted); font-size: 11px; line-height: 1.8; }

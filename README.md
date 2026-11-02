@@ -28,7 +28,8 @@ extension management page.
 
 ## Daily Todos
 
-- Use **Edit daily Todos** to add, edit or remove recurring daily items.
+- Click the **calendar icon (Daily Todos)** beside the list heading to add, edit
+  or remove recurring daily items.
 - Changes apply to today's list immediately. Existing completed checks stay checked.
 - On a new local calendar day, daily Todos appear with fresh, unchecked boxes.
 - Editing a daily item from its row also updates the recurring template.
@@ -42,6 +43,23 @@ extension management page.
 - Completed additions and past daily checklists remain in date-based history.
 - Use the date selector to view past records. History is read-only.
 - Dates follow the PC's local calendar, not UTC.
+
+### Completed Todo view options
+
+- Click the **sort-down icon (Done last)** beside the list heading to move
+  completed Todos below unfinished ones.
+- Click the **filter icon (Hide done)** to hide completed Todos; click it again
+  to show them.
+- These icons share the header with the Daily Todos calendar icon. A green
+  highlight and small dot indicate **On**; a neutral icon indicates **Off**.
+  Hover for the function name and current state. Enter and Space also toggle
+  a focused button.
+- Both options are off by default and can be used independently or together.
+- These options apply to today's list and past records. They change only the view:
+  stored Todo order, completion history and the total completion count stay intact.
+- Your choices are saved locally and restored when you reopen the sidebar or restart Edge.
+- View settings are included in JSON backups. Older profiles and backups remain
+  compatible and start with both options off.
 
 ## Focus countdown
 
@@ -67,7 +85,7 @@ in the application.
 
 ## Storage and backup
 
-- Todos, daily templates, date-based completion and timer state are stored
+- Todos, daily templates, date-based completion, list view settings and timer state are stored
   **only in this Edge profile on this PC**.
 - There is no synchronization with other PCs or profiles and no external data transmission.
 - Changes are saved immediately, not just when the browser closes.

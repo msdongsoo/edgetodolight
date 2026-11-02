@@ -3,6 +3,7 @@ export const STATE_VERSION = 1;
 export const DEFAULT_MINUTES = 20;
 export const MAX_MINUTES = 180;
 export const MAX_TITLE_LENGTH = 200;
+export const DEFAULT_LIST_OPTIONS = Object.freeze({ doneLast: false, hideDone: false });
 
 function requireValue(condition, message) {
   if (!condition) throw new Error(message);
@@ -75,6 +76,7 @@ export function createState(now = Date.now()) {
     currentDate,
     templates: [],
     days: { [currentDate]: [] },
+    listOptions: { ...DEFAULT_LIST_OPTIONS },
     timer: createTimer()
   };
 }
@@ -92,6 +94,9 @@ function validateTemplates(templates) {
 export function validateState(state) {
   requireValue(isObject(state) && state.version === STATE_VERSION, "Unsupported saved data version. Your existing data has not been changed.");
   requireValue(isDateKey(state.currentDate) && isObject(state.days) && Array.isArray(state.days[state.currentDate]), "Invalid date-based Todo data format.");
+  if (state.listOptions !== undefined) {
+    requireValue(isObject(state.listOptions) && typeof state.listOptions.doneLast === "boolean" && typeof state.listOptions.hideDone === "boolean", "Invalid Todo list options.");
+  }
   validateTemplates(state.templates);
   for (const [date, tasks] of Object.entries(state.days)) {
     requireValue(isDateKey(date) && Array.isArray(tasks), "Invalid date in Todo history.");
@@ -150,6 +155,12 @@ export function remainingTime(timer, now = Date.now()) {
   return timer.status === "running" ? Math.max(0, timer.endAt - now) : timer.remainingMs;
 }
 
+export function getVisibleTasks(tasks, options = DEFAULT_LIST_OPTIONS) {
+  const visible = options.hideDone ? tasks.filter((task) => !task.done) : [...tasks];
+  if (options.doneLast) visible.sort((left, right) => Number(left.done) - Number(right.done));
+  return visible;
+}
+
 export function reconcileState(state, now = Date.now()) {
   let next = state;
   const date = localDateKey(now);
@@ -177,6 +188,11 @@ export function reconcileState(state, now = Date.now()) {
     next.timer.remainingMs = 0;
     next.timer.status = "finished";
   }
+  // Existing version-1 profiles and backups did not contain view preferences.
+  if (next.listOptions === undefined) {
+    if (next === state) next = structuredClone(state);
+    next.listOptions = { ...DEFAULT_LIST_OPTIONS };
+  }
   return next;
 }
 
@@ -195,6 +211,11 @@ export function applyCommand(state, command, now = Date.now(), createId = () => 
   const next = structuredClone(reconcileState(state, now));
   const timer = next.timer;
   switch (command.type) {
+    case "list.option":
+      requireValue(command.name === "doneLast" || command.name === "hideDone", "Unknown Todo list option.");
+      requireValue(typeof command.enabled === "boolean", "Todo list options must be true or false.");
+      next.listOptions[command.name] = command.enabled;
+      break;
     case "task.add":
       next.days[next.currentDate].push({
         id: createId(),

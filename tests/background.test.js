@@ -83,6 +83,7 @@ async function setup(t, initial, initialNow = new Date(2026, 10, 1, 10).getTime(
 test("initializes local storage, action sidebar behavior and a local midnight alarm", async (t) => {
   const app = await setup(t);
   assert.equal(app.data[STORAGE_KEY].timer.durationMinutes, 20);
+  assert.deepEqual(app.data[STORAGE_KEY].listOptions, { doneLast: false, hideDone: false });
   assert.deepEqual(app.api.panelBehavior, { openPanelOnActionClick: true });
   assert.equal(app.alarms.get("edge-todo-midnight").scheduledTime, nextMidnight(Date.now()));
   assert.equal(app.errors.length, 0);
@@ -93,6 +94,42 @@ test("serializes concurrent writes from multiple panels without losing Todos", a
   const results = await Promise.all(Array.from({ length: 15 }, (_, index) => app.send({ type: "task.add", title: `Todo ${index}` })));
   assert.equal(results.every((result) => result.ok), true);
   assert.equal(app.data[STORAGE_KEY].days[app.data[STORAGE_KEY].currentDate].length, 15);
+});
+
+test("persists independently changed list options from concurrent panels", async (t) => {
+  const app = await setup(t);
+  const responses = await Promise.all([
+    app.send({ type: "list.option", name: "doneLast", enabled: true }),
+    app.send({ type: "list.option", name: "hideDone", enabled: true }),
+    app.send({ type: "task.add", title: "Keep this Todo" })
+  ]);
+  assert.equal(responses.every((response) => response.ok), true);
+  const saved = app.data[STORAGE_KEY];
+  assert.deepEqual(saved.listOptions, { doneLast: true, hideDone: true });
+  assert.equal(saved.days[saved.currentDate][0].title, "Keep this Todo");
+});
+
+test("startup persists legacy profile defaults without resetting existing data", async (t) => {
+  const now = new Date(2026, 10, 1, 10).getTime();
+  let legacy = applyCommand(createState(now), { type: "task.add", title: "Legacy Todo" }, now);
+  legacy = applyCommand(legacy, { type: "timer.start" }, now);
+  delete legacy.listOptions;
+  const app = await setup(t, legacy, now);
+  assert.deepEqual(app.data[STORAGE_KEY].listOptions, { doneLast: false, hideDone: false });
+  assert.deepEqual(app.data[STORAGE_KEY].days, legacy.days);
+  assert.deepEqual(app.data[STORAGE_KEY].timer, legacy.timer);
+  assert.equal(app.errors.length, 0);
+});
+
+test("failed view-setting saves return an explicit error and preserve the previous preferences", async (t) => {
+  const app = await setup(t);
+  const before = structuredClone(app.data);
+  app.failStorage("Storage quota exceeded");
+  const response = await app.send({ type: "list.option", name: "hideDone", enabled: true });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /quota/);
+  assert.deepEqual(app.data, before);
+  assert.equal(app.errors.length > 0, true);
 });
 
 test("recreates the persisted timer alarm when the service worker starts", async (t) => {
