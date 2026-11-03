@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Edge Todo Light",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Daily Todos and a focus countdown, saved locally in this Edge profile.",
   "permissions": ["storage", "alarms", "notifications", "offscreen", "sidePanel"],
   "background": {

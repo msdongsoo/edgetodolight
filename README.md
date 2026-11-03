@@ -36,7 +36,7 @@ extension management page.
 
 ## Daily Todos
 
-- Click the **calendar icon (Daily Todos)** beside the list heading to add, edit
+- Click the **repeat-arrows icon (Daily Todos)** beside the list heading to add, edit
   or remove recurring daily items.
 - Changes apply to today's list immediately. Existing completed checks stay checked.
 - On a new local calendar day, daily Todos appear with fresh, unchecked boxes.
@@ -58,7 +58,7 @@ extension management page.
   completed Todos below unfinished ones.
 - Click the **filter icon (Hide done)** to hide completed Todos; click it again
   to show them.
-- These icons share the header with the Daily Todos calendar icon. A green
+- These icons share the header with the Daily Todos repeat icon. A green
   highlight and small dot indicate **On**; a neutral icon indicates **Off**.
   Hover for the function name and current state. Enter and Space also toggle
   a focused button.
