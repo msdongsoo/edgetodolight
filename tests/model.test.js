@@ -59,6 +59,115 @@ test("Hide done works alone or with sorting and keeps the original completed ite
   assert.deepEqual(getVisibleTasks(tasks, { doneLast: false, hideDone: false }), tasks);
 });
 
+test("moving a Todo before or after any other Todo preserves every task and does not mutate prior state", () => {
+  let state = createState(dayOne);
+  for (const id of ["a", "b", "c", "d"]) {
+    state = applyCommand(state, { type: "task.add", title: id }, dayOne, () => id);
+  }
+  const before = structuredClone(state);
+  for (const id of ["a", "b", "c", "d"]) {
+    for (const targetId of ["a", "b", "c", "d"].filter((value) => value !== id)) {
+      for (const placement of ["before", "after"]) {
+        const next = command(state, { type: "task.move", id, targetId, placement, date: state.currentDate });
+        const ordered = next.days[next.currentDate];
+        const expected = ["a", "b", "c", "d"].filter((value) => value !== id);
+        expected.splice(expected.indexOf(targetId) + (placement === "after" ? 1 : 0), 0, id);
+        assert.deepEqual(ordered.map((task) => task.id), expected);
+        assert.deepEqual([...ordered].sort((a, b) => a.id.localeCompare(b.id)), before.days[before.currentDate]);
+        assert.deepEqual(next.timer, before.timer);
+      }
+    }
+  }
+  assert.deepEqual(state, before);
+});
+
+test("Done last permits reordering within each completion group but rejects moves between groups", () => {
+  let state = createState(dayOne);
+  for (const id of ["open-a", "done-a", "open-b", "done-b"]) {
+    state = applyCommand(state, { type: "task.add", title: id }, dayOne, () => id);
+    if (id.startsWith("done")) state = command(state, { type: "task.toggle", id, done: true });
+  }
+  state = command(state, { type: "list.option", name: "doneLast", enabled: true });
+  state = command(state, { type: "task.move", id: "open-b", targetId: "open-a", placement: "before", date: state.currentDate });
+  state = command(state, { type: "task.move", id: "done-b", targetId: "done-a", placement: "before", date: state.currentDate });
+  assert.deepEqual(getVisibleTasks(state.days[state.currentDate], state.listOptions).map((task) => task.id), [
+    "open-b", "open-a", "done-b", "done-a"
+  ]);
+  assert.throws(() => command(state, { type: "task.move", id: "open-a", targetId: "done-b", placement: "after", date: state.currentDate }), /Turn off Done last/);
+  state = command(state, { type: "list.option", name: "doneLast", enabled: false });
+  state = command(state, { type: "task.move", id: "open-a", targetId: "done-b", placement: "after", date: state.currentDate });
+  const order = state.days[state.currentDate].map((task) => task.id);
+  assert.equal(order.indexOf("open-a"), order.indexOf("done-b") + 1);
+});
+
+test("reordering a filtered list retains hidden completed tasks in their relative order", () => {
+  let state = createState(dayOne);
+  for (const id of ["open-a", "done-a", "open-b", "done-b", "open-c"]) {
+    state = applyCommand(state, { type: "task.add", title: id }, dayOne, () => id);
+    if (id.startsWith("done")) state = command(state, { type: "task.toggle", id, done: true });
+  }
+  const hidden = state.days[state.currentDate].filter((task) => task.done);
+  state = command(state, { type: "list.option", name: "hideDone", enabled: true });
+  for (const doneLast of [false, true]) {
+    state = command(state, { type: "list.option", name: "doneLast", enabled: doneLast });
+    state = command(state, { type: "task.move", id: "open-c", targetId: "open-a", placement: "before", date: state.currentDate });
+    assert.deepEqual(getVisibleTasks(state.days[state.currentDate], state.listOptions).map((task) => task.id), ["open-c", "open-a", "open-b"]);
+    assert.deepEqual(state.days[state.currentDate].filter((task) => task.done), hidden);
+    assert.equal(state.days[state.currentDate].length, 5);
+  }
+  assert.throws(() => command(state, { type: "task.move", id: "done-a", targetId: "done-b", placement: "after", date: state.currentDate }), /Turn off Hide done/);
+});
+
+test("reordering validates dates, task IDs and drop placement without changing saved data", () => {
+  let state = applyCommand(createState(dayOne), { type: "task.add", title: "First" }, dayOne, () => "first");
+  state = applyCommand(state, { type: "task.add", title: "Second" }, dayOne, () => "second");
+  const before = structuredClone(state);
+  const valid = { type: "task.move", id: "first", targetId: "second", placement: "after", date: state.currentDate };
+  for (const invalid of [
+    { date: "2026-10-31" }, { date: "2026-11-02" }, { date: undefined },
+    { id: "missing" }, { targetId: "missing" }, { targetId: "first" },
+    { placement: "middle" }, { placement: null }
+  ]) {
+    assert.throws(() => command(state, { ...valid, ...invalid }));
+  }
+  assert.throws(() => command(state, valid, dayTwo), /Only today's Todos/);
+  assert.deepEqual(state, before);
+});
+
+test("manual order survives title and template edits without changing recurring template order or the timer", () => {
+  let state = command(createState(dayOne), { type: "templates.save", templates });
+  const readId = state.days[state.currentDate][0].id;
+  const exerciseId = state.days[state.currentDate][1].id;
+  state = command(state, { type: "task.toggle", id: readId, done: true });
+  state = applyCommand(state, { type: "task.add", title: "Additional Todo" }, dayOne, () => "custom");
+  state = command(state, { type: "timer.select", id: "custom" });
+  state = command(state, { type: "timer.start" });
+  const timer = structuredClone(state.timer);
+  state = command(state, { type: "task.move", id: "custom", targetId: readId, placement: "before", date: state.currentDate });
+  state = command(state, { type: "task.rename", id: readId, title: "Daily reading" });
+  assert.deepEqual(state.days[state.currentDate].map((task) => task.id), ["custom", readId, exerciseId]);
+  assert.equal(state.days[state.currentDate][1].done, true);
+  state = command(state, {
+    type: "templates.save",
+    templates: [{ id: "daily-read", title: "Daily reading" }, { id: "daily-new", title: "New daily Todo" }]
+  });
+  assert.deepEqual(state.days[state.currentDate].map((task) => task.id), ["custom", readId, "daily:2026-11-01:daily-new"]);
+  assert.deepEqual(state.templates.map((template) => template.id), ["daily-read", "daily-new"]);
+  assert.deepEqual(state.timer, timer);
+});
+
+test("manual order is included in backups and history while a new day follows the recurring template order", () => {
+  let state = command(createState(dayOne), { type: "templates.save", templates });
+  const [read, exercise] = state.days[state.currentDate];
+  state = command(state, { type: "task.move", id: exercise.id, targetId: read.id, placement: "before", date: state.currentDate });
+  const backup = makeBackup(state, dayOne);
+  const restored = command(createState(dayOne), { type: "backup.import", backup });
+  assert.deepEqual(restored.days, state.days);
+  const next = reconcileState(restored, dayTwo);
+  assert.deepEqual(next.days["2026-11-01"], state.days[state.currentDate]);
+  assert.deepEqual(next.days[next.currentDate].map((task) => task.templateId), templates.map((template) => template.id));
+});
+
 test("list options update independently without changing Todos or a running timer", () => {
   let state = command(createState(dayOne), { type: "templates.save", templates });
   state = command(state, { type: "timer.start" });

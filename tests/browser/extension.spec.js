@@ -43,6 +43,24 @@ async function addTask(title) {
   await expect(page.getByRole("button", { name: "Add Todo", exact: true })).toBeEnabled();
 }
 
+function taskRow(title) {
+  return page.locator(".task-row").filter({
+    has: page.getByRole("checkbox", { name: `${title} complete`, exact: true })
+  });
+}
+
+async function dragTask(title, targetTitle, placement = "before") {
+  const target = taskRow(targetTitle);
+  await target.scrollIntoViewIfNeeded();
+  const bounds = await target.boundingBox();
+  expect(bounds).not.toBeNull();
+  await taskRow(title).locator(".task-title").dragTo(target, {
+    sourcePosition: { x: 4, y: 10 },
+    targetPosition: { x: bounds.width / 2, y: placement === "before" ? 3 : bounds.height - 3 }
+  });
+  await expect(page.locator("body")).toHaveAttribute("aria-busy", "false");
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.beforeAll(async () => {
@@ -79,6 +97,176 @@ test("loads the actual extension, opens by toolbar action, and persists checkbox
   await page.reload();
   await expect(page.getByRole("checkbox", { name: "My first Todo complete", exact: true })).toBeChecked();
   await expect(page.locator(".task-row")).toHaveClass(/is-done/);
+});
+
+test("dragging Todo text and empty row space changes order without handles and preserves completion on reload", async () => {
+  for (const title of ["First", "Second", "Third", "Fourth"]) await addTask(title);
+  await page.getByRole("checkbox", { name: "Second complete", exact: true }).check();
+  await expect(taskRow("Third")).toHaveAttribute("draggable", "true");
+  await expect(page.locator(".drag-handle")).toHaveCount(0);
+  expect(await taskRow("Third").evaluate((row) => row.firstElementChild.matches(".task-checkbox"))).toBe(true);
+  await dragTask("Third", "First");
+  await expect(page.locator(".task-title")).toHaveText(["Third", "First", "Second", "Fourth"]);
+  await taskRow("Fourth").scrollIntoViewIfNeeded();
+  const target = await taskRow("Fourth").boundingBox();
+  expect(target).not.toBeNull();
+  await taskRow("First").dragTo(taskRow("Fourth"), {
+    sourcePosition: { x: 150, y: 3 },
+    targetPosition: { x: target.width / 2, y: target.height - 3 }
+  });
+  await expect(page.locator(".task-title")).toHaveText(["Third", "Second", "Fourth", "First"]);
+  await expect(page.locator("#completion-count")).toHaveText("1 / 4 done");
+  await expect(page.getByRole("checkbox", { name: "Second complete", exact: true })).toBeChecked();
+  await expect(page.locator(".is-dragging, .drop-before, .drop-after, .drop-invalid")).toHaveCount(0);
+  await page.reload();
+  await expect(page.locator(".task-title")).toHaveText(["Third", "Second", "Fourth", "First"]);
+  await expect(page.getByRole("checkbox", { name: "Second complete", exact: true })).toBeChecked();
+  await expect(page.locator("#error-banner")).not.toBeVisible();
+});
+
+test("checkboxes and row actions keep their normal clicks and cannot initiate row dragging", async () => {
+  await addTask("First");
+  await addTask("Second");
+  await taskRow("First").locator(".task-title").click();
+  await expect(page.getByRole("checkbox", { name: "First complete", exact: true })).not.toBeChecked();
+  for (const control of [
+    page.getByRole("checkbox", { name: "First complete", exact: true }),
+    page.getByRole("button", { name: "First Focus", exact: true }),
+    page.getByRole("button", { name: "First Edit", exact: true }),
+    page.getByRole("button", { name: "First Delete", exact: true })
+  ]) {
+    const target = taskRow("Second");
+    const bounds = await target.boundingBox();
+    expect(bounds).not.toBeNull();
+    await control.dragTo(target, { targetPosition: { x: bounds.width / 2, y: bounds.height - 3 } });
+    await expect(page.locator(".task-title")).toHaveText(["First", "Second"]);
+    await expect(page.locator("#completion-count")).toHaveText("0 / 2 done");
+    await expect(page.locator(".is-dragging, .drop-before, .drop-after")).toHaveCount(0);
+    await expect(page.locator("#rename-dialog")).not.toBeVisible();
+  }
+  const checkbox = page.getByRole("checkbox", { name: "First complete", exact: true });
+  await checkbox.check();
+  await expect(page.locator("#completion-count")).toHaveText("1 / 2 done");
+  await checkbox.uncheck();
+  await checkbox.focus();
+  await checkbox.press("Alt+ArrowDown");
+  await expect(page.locator(".task-title")).toHaveText(["First", "Second"]);
+  await page.getByRole("button", { name: "First Focus", exact: true }).click();
+  await expect(page.locator("#focus-task")).toHaveValue(await taskRow("First").getAttribute("data-id"));
+  await page.getByRole("button", { name: "First Edit", exact: true }).click();
+  await expect(page.locator("#rename-dialog")).toBeVisible();
+  await page.getByLabel("Todo title", { exact: true }).fill("Renamed first");
+  await page.locator("#rename-form").getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText(["Renamed first", "Second"]);
+  await dragTask("Renamed first", "Second", "after");
+  await expect(page.locator(".task-title")).toHaveText(["Second", "Renamed first"]);
+  await page.getByRole("button", { name: "Second Delete", exact: true }).click();
+  await expect(page.locator(".task-title")).toHaveText("Renamed first");
+  await expect(page.locator("#error-banner")).not.toBeVisible();
+});
+
+test("drag ordering works with hidden completed Todos and within the Done last completion groups", async () => {
+  for (const title of ["Open first", "Done first", "Open second", "Done second"]) await addTask(title);
+  for (const title of ["Done first", "Done second"]) {
+    await page.getByRole("checkbox", { name: `${title} complete`, exact: true }).check();
+  }
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await dragTask("Open second", "Open first");
+  await expect(page.locator(".task-title")).toHaveText(["Open second", "Open first"]);
+  await expect(page.locator("#completion-count")).toHaveText("2 / 4 done");
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await dragTask("Done second", "Done first");
+  await expect(page.locator(".task-title")).toHaveText(["Open second", "Open first", "Done second", "Done first"]);
+  await dragTask("Open first", "Done first", "after");
+  await expect(page.locator(".task-title")).toHaveText(["Open second", "Open first", "Done second", "Done first"]);
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await dragTask("Open first", "Done first", "after");
+  await expect(page.locator(".task-title")).toHaveText(["Open second", "Done second", "Done first", "Open first"]);
+  const stored = (await send({ type: "state.get" })).state;
+  expect(stored.days[stored.currentDate].filter((task) => task.done).map((task) => task.title)).toEqual(["Done second", "Done first"]);
+});
+
+test("Todo rows support keyboard reordering with focus restoration and boundary feedback", async () => {
+  for (const title of ["First", "Second", "Third"]) await addTask(title);
+  const row = taskRow("First");
+  await row.focus();
+  await row.press("Alt+ArrowDown");
+  await expect(page.locator(".task-title")).toHaveText(["Second", "First", "Third"]);
+  await expect(row).toBeFocused();
+  await row.press("Alt+ArrowUp");
+  await expect(page.locator(".task-title")).toHaveText(["First", "Second", "Third"]);
+  await expect(row).toBeFocused();
+  await row.press("Alt+ArrowUp");
+  await expect(page.locator("#reorder-status")).toHaveText("This Todo is already at the edge of its group.");
+  await expect(page.locator(".task-title")).toHaveText(["First", "Second", "Third"]);
+  await page.getByRole("checkbox", { name: "Second complete", exact: true }).check();
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await row.focus();
+  await row.press("Alt+ArrowDown");
+  await expect(page.locator(".task-title")).toHaveText(["Third", "First"]);
+  await expect(page.locator("#completion-count")).toHaveText("1 / 3 done");
+  await expect(page.locator("#rename-dialog")).not.toBeVisible();
+  await page.getByRole("button", { name: "Hide done", exact: true }).click();
+  await page.getByRole("button", { name: "Done last", exact: true }).click();
+  await row.focus();
+  await row.press("Alt+ArrowDown");
+  await expect(page.locator(".task-title")).toHaveText(["Third", "First", "Second"]);
+  await expect(page.locator("#reorder-status")).toHaveText("This Todo is already at the edge of its group.");
+  await expect(page.locator("#error-banner")).not.toBeVisible();
+});
+
+test("drag cancellation cleans up indicators and unrelated external drops do not reorder Todos", async () => {
+  await addTask("First");
+  await addTask("Second");
+  const source = await taskRow("First").locator(".task-title").boundingBox();
+  const target = await page.locator(".task-row").last().boundingBox();
+  expect(source).not.toBeNull();
+  expect(target).not.toBeNull();
+  await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(target.x + target.width / 2, target.y + target.height - 3, { steps: 8 });
+    await page.mouse.move(target.x + target.width / 2 + 1, target.y + target.height - 3);
+    await expect(page.locator(".is-dragging")).toHaveCount(1);
+    await expect(page.locator(".drop-after")).toHaveCount(1);
+    await page.keyboard.press("Escape");
+  } finally {
+    await page.mouse.up();
+  }
+  await expect(page.locator(".is-dragging, .drop-before, .drop-after")).toHaveCount(0);
+  await page.locator(".task-row").last().evaluate((row) => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.setData("text/plain", "external-task");
+    row.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer }));
+    row.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer }));
+  });
+  await expect(page.locator(".task-title")).toHaveText(["First", "Second"]);
+  await expect(page.locator("#error-banner")).not.toBeVisible();
+});
+
+test("dragging a daily Todo and editing its template preserves today's manual order", async () => {
+  const result = await send({
+    type: "templates.save",
+    templates: [{ id: "read", title: "Daily reading" }, { id: "walk", title: "Daily walk" }]
+  });
+  expect(result.ok).toBe(true);
+  await addTask("Additional task");
+  await dragTask("Additional task", "Daily reading");
+  await expect(page.locator(".task-title")).toHaveText(["Additional task", "Daily reading", "Daily walk"]);
+  await page.getByRole("button", { name: "Edit daily Todos", exact: true }).click();
+  await page.getByLabel("Daily Todo 1", { exact: true }).fill("Read a chapter");
+  await page.getByRole("button", { name: "+ Add daily Todo", exact: true }).click();
+  await page.getByLabel("Daily Todo 3", { exact: true }).fill("Review the day");
+  await page.locator("#save-templates").click();
+  await expect(page.locator(".task-title")).toHaveText(["Additional task", "Read a chapter", "Daily walk", "Review the day"]);
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export backup", exact: true }).click();
+  const download = await downloadPromise;
+  const backup = JSON.parse(readFileSync(await download.path(), "utf8"));
+  expect(backup.state.days[backup.state.currentDate].map((task) => task.title)).toEqual([
+    "Additional task", "Read a chapter", "Daily walk", "Review the day"
+  ]);
 });
 
 test("compact header icons stay on one line and show On/Off states for mouse and keyboard", async () => {
@@ -296,6 +484,9 @@ test("invalid entered duration shows an English error without starting the old d
 
 test("retains Todo data and the running countdown across a full browser restart", async () => {
   await addTask("Keep this Todo after closing Edge");
+  await addTask("Another persistent Todo");
+  await dragTask("Another persistent Todo", "Keep this Todo after closing Edge");
+  await expect(page.locator(".task-title")).toHaveText(["Another persistent Todo", "Keep this Todo after closing Edge"]);
   await page.getByRole("button", { name: "Done last", exact: true }).click();
   await page.getByRole("button", { name: "Hide done", exact: true }).click();
   await page.getByRole("button", { name: "Start focus", exact: true }).click();
@@ -304,7 +495,7 @@ test("retains Todo data and the running countdown across a full browser restart"
   await context.close();
   await launch();
   page = await openApp();
-  await expect(page.locator(".task-title")).toHaveText("Keep this Todo after closing Edge");
+  await expect(page.locator(".task-title")).toHaveText(["Another persistent Todo", "Keep this Todo after closing Edge"]);
   const after = (await send({ type: "state.get" })).state;
   expect(after.timer.status).toBe("running");
   expect(after.timer.endAt).toBe(before.timer.endAt);
@@ -334,6 +525,7 @@ test("a new day resets common checks, carries unfinished additions and keeps rea
   await expect(page.getByRole("checkbox", { name: "Daily work complete", exact: true })).toBeChecked();
   await expect(page.getByRole("checkbox", { name: "Daily work complete", exact: true })).toBeDisabled();
   await expect(page.locator("#add-task-form")).not.toBeVisible();
+  await expect(page.locator('.task-row[draggable="true"]')).toHaveCount(0);
   await page.getByRole("button", { name: "Done last", exact: true }).click();
   await expect(page.locator(".task-title")).toHaveText(["Unfinished work", "Daily work"]);
   await page.getByRole("button", { name: "Hide done", exact: true }).click();
@@ -344,6 +536,7 @@ test("a new day resets common checks, carries unfinished additions and keeps rea
   await expect(page.getByRole("checkbox", { name: "Daily work complete", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Today", exact: true }).click();
   await expect(page.locator("#add-task-form")).toBeVisible();
+  await expect(page.locator('.task-row[draggable="true"]')).toHaveCount(2);
 });
 
 test("updates multiple open views without losing concurrent additions", async () => {
@@ -356,6 +549,9 @@ test("updates multiple open views without losing concurrent additions", async ()
     expect(responses.every((response) => response.ok)).toBe(true);
     await expect(page.locator(".task-row")).toHaveCount(2);
     await expect(second.locator(".task-row")).toHaveCount(2);
+    await dragTask("Second window", "First window");
+    await expect(page.locator(".task-title")).toHaveText(["Second window", "First window"]);
+    await expect(second.locator(".task-title")).toHaveText(["Second window", "First window"]);
     const preferences = await Promise.all([
       page.evaluate(() => chrome.runtime.sendMessage({ target: "background", command: { type: "list.option", name: "doneLast", enabled: true } })),
       second.evaluate(() => chrome.runtime.sendMessage({ target: "background", command: { type: "list.option", name: "hideDone", enabled: true } }))

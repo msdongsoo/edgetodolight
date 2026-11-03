@@ -144,11 +144,19 @@ function recurringTask(template, date, now, previous) {
 function syncTemplates(state, templates, now) {
   const today = state.days[state.currentDate];
   const previous = new Map(today.filter((task) => task.templateId !== null).map((task) => [task.templateId, task]));
+  const pending = new Map(templates.map((template) => [
+    template.id, recurringTask(template, state.currentDate, now, previous.get(template.id))
+  ]));
+  const retained = [];
+  for (const task of today) {
+    if (task.templateId === null) retained.push(task);
+    else if (pending.has(task.templateId)) {
+      retained.push(pending.get(task.templateId));
+      pending.delete(task.templateId);
+    }
+  }
   state.templates = templates;
-  state.days[state.currentDate] = [
-    ...templates.map((template) => recurringTask(template, state.currentDate, now, previous.get(template.id))),
-    ...today.filter((task) => task.templateId === null)
-  ];
+  state.days[state.currentDate] = [...retained, ...pending.values()];
 }
 
 export function remainingTime(timer, now = Date.now()) {
@@ -232,6 +240,20 @@ export function applyCommand(state, command, now = Date.now(), createId = () => 
       const task = findTask(next, command.id);
       task.done = command.done;
       task.completedAt = task.done ? now : null;
+      break;
+    }
+    case "task.move": {
+      requireValue(command.date === next.currentDate, "Only today's Todos can be reordered. Return to Today and try again.");
+      requireValue(command.placement === "before" || command.placement === "after", "Choose a valid drop position.");
+      const task = findTask(next, command.id);
+      const target = findTask(next, command.targetId);
+      requireValue(task.id !== target.id, "Choose a different Todo as the drop target.");
+      requireValue(!next.listOptions.hideDone || (!task.done && !target.done), "Turn off Hide done before reordering completed Todos.");
+      requireValue(!next.listOptions.doneLast || task.done === target.done, "Turn off Done last to move Todos between completion groups.");
+      const tasks = next.days[next.currentDate];
+      tasks.splice(tasks.indexOf(task), 1);
+      const targetIndex = tasks.indexOf(target);
+      tasks.splice(targetIndex + (command.placement === "after" ? 1 : 0), 0, task);
       break;
     }
     case "task.rename": {

@@ -109,6 +109,34 @@ test("persists independently changed list options from concurrent panels", async
   assert.equal(saved.days[saved.currentDate][0].title, "Keep this Todo");
 });
 
+test("reordering and concurrent additions persist without dropping or overwriting tasks", async (t) => {
+  const app = await setup(t);
+  await app.send({ type: "task.add", title: "First" });
+  const second = await app.send({ type: "task.add", title: "Second" });
+  const { currentDate } = second.state;
+  const [firstTask, secondTask] = second.state.days[currentDate];
+  const results = await Promise.all([
+    app.send({ type: "task.move", id: secondTask.id, targetId: firstTask.id, placement: "before", date: currentDate }),
+    app.send({ type: "task.add", title: "Third" })
+  ]);
+  assert.equal(results.every((result) => result.ok), true);
+  assert.deepEqual(app.data[STORAGE_KEY].days[currentDate].map((task) => task.title), ["Second", "First", "Third"]);
+});
+
+test("failed reorder saves report an error and retain the previously persisted order", async (t) => {
+  const app = await setup(t);
+  await app.send({ type: "task.add", title: "First" });
+  const result = await app.send({ type: "task.add", title: "Second" });
+  const before = structuredClone(app.data);
+  const [first, second] = result.state.days[result.state.currentDate];
+  app.failStorage("Storage quota exceeded");
+  const response = await app.send({ type: "task.move", id: second.id, targetId: first.id, placement: "before", date: result.state.currentDate });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /quota/);
+  assert.deepEqual(app.data, before);
+  assert.equal(app.errors.length > 0, true);
+});
+
 test("startup persists legacy profile defaults without resetting existing data", async (t) => {
   const now = new Date(2026, 10, 1, 10).getTime();
   let legacy = applyCommand(createState(now), { type: "task.add", title: "Legacy Todo" }, now);

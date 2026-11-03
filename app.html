@@ -83,6 +83,8 @@
           <input id="new-task" type="text" maxlength="200" placeholder="Add a new Todo..." autocomplete="off" required disabled>
           <button id="add-task" class="primary-button" type="submit" aria-label="Add Todo" disabled>+</button>
         </form>
+        <p id="reorder-help" class="sr-only">Drag a Todo row to reorder today's Todos, or focus the row and press Alt plus Up or Down. Checkboxes and action buttons keep their normal click actions. With Done last on, move within the same completion group.</p>
+        <p id="reorder-status" class="sr-only" role="status"></p>
         <ul id="task-list" class="task-list" aria-label="Todo list"></ul>
         <div id="empty-state" class="empty-state">
           <span class="empty-symbol" aria-hidden="true">✓</span>

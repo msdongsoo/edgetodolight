@@ -52,6 +52,22 @@ extension management page.
 - Use the date selector to view past records. History is read-only.
 - Dates follow the PC's local calendar, not UTC.
 
+### Reorder today's Todos
+
+- Drag a Todo's text or empty row space and drop it above or below another row.
+  A green line shows the drop position; no separate drag handle is needed.
+- Checkboxes remain on the left. They and the action buttons keep their normal
+  click behavior and do not initiate reordering.
+- For keyboard access, focus a Todo row and press **Alt + Up** or **Alt + Down**.
+- Order is saved locally, survives reopening Edge and is included in backups.
+- With **Done last** on, reorder within the unfinished group or the completed
+  group. Turn it off to move Todos between those groups.
+- **Hide done** keeps completed Todos saved in their relative order while you
+  rearrange the visible unfinished ones.
+- Reordering affects today only, not past history or the recurring template
+  order used for a new day. Editing Todo titles or existing daily templates
+  preserves today's manual order; new daily items are appended to today's list.
+
 ### Completed Todo view options
 
 - Click the **sort-down icon (Done last)** beside the list heading to move

@@ -8,6 +8,8 @@ let templateDraft = [];
 let renameId;
 let requestedCompletion;
 let pendingBackup;
+let draggedTodo;
+let dragFromControl = false;
 
 const icons = {
   focus: '<circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle>',
@@ -72,6 +74,10 @@ function renderControls() {
   for (const control of element("task-list").querySelectorAll("input, button")) {
     control.disabled = !current || (control.dataset.action === "focus" && (active || control.dataset.done === "true"));
   }
+  for (const row of element("task-list").children) {
+    row.draggable = current;
+    row.tabIndex = current ? 0 : -1;
+  }
   for (const control of document.querySelectorAll("dialog button, dialog input")) control.disabled = busy;
   document.body.setAttribute("aria-busy", String(busy));
 }
@@ -122,6 +128,7 @@ function tag(text, focus = false) {
 }
 
 function renderTasks() {
+  clearDrag();
   const tasks = state.days[selectedDate] ?? [];
   const visibleTasks = getVisibleTasks(tasks, state.listOptions);
   const hiddenCount = tasks.length - visibleTasks.length;
@@ -132,6 +139,11 @@ function renderTasks() {
     const row = document.createElement("li");
     row.className = `task-row${task.done ? " is-done" : ""}`;
     row.dataset.id = task.id;
+    if (current) {
+      row.title = "Drag this Todo to reorder, or press Alt + Up/Down.";
+      row.setAttribute("aria-describedby", "reorder-help");
+      row.setAttribute("aria-keyshortcuts", "Alt+ArrowUp Alt+ArrowDown");
+    }
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.className = "task-checkbox";
@@ -226,6 +238,96 @@ function renderTemplateDraft() {
 }
 
 element("dismiss-error").addEventListener("click", clearError);
+
+function clearDropIndicators() {
+  for (const row of element("task-list").children) row.classList.remove("drop-before", "drop-after", "drop-invalid");
+}
+
+function clearDrag() {
+  draggedTodo = undefined;
+  clearDropIndicators();
+  for (const row of element("task-list").children) row.classList.remove("is-dragging");
+}
+
+function dropPlacement(event, row) {
+  const bounds = row.getBoundingClientRect();
+  return event.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+}
+
+function reorderTodo(id, targetId, placement, date) {
+  element("reorder-status").textContent = "";
+  void perform(async () => {
+    await request({ type: "task.move", id, targetId, placement, date });
+    element("reorder-status").textContent = "Todo order saved.";
+  }).then(() => {
+    const row = [...element("task-list").children].find((item) => item.dataset.id === id);
+    row?.focus();
+  });
+}
+
+element("task-list").addEventListener("pointerdown", (event) => {
+  dragFromControl = Boolean(event.target.closest("input, button"));
+}, true);
+
+element("task-list").addEventListener("dragstart", (event) => {
+  const row = event.target.closest(".task-row");
+  if (!row || !row.draggable || dragFromControl || busy || selectedDate !== state.currentDate) {
+    event.preventDefault();
+    return;
+  }
+  draggedTodo = { id: row.dataset.id, date: selectedDate };
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", draggedTodo.id);
+  event.dataTransfer.setDragImage(row, 0, row.offsetHeight / 2);
+  row.classList.add("is-dragging");
+});
+
+element("task-list").addEventListener("dragover", (event) => {
+  if (!draggedTodo) return;
+  const row = event.target.closest(".task-row");
+  clearDropIndicators();
+  if (!row || busy || draggedTodo.date !== state.currentDate || selectedDate !== state.currentDate || row.dataset.id === draggedTodo.id) return;
+  const tasks = state.days[state.currentDate];
+  const source = tasks.find((task) => task.id === draggedTodo.id);
+  const target = tasks.find((task) => task.id === row.dataset.id);
+  const blocked = state.listOptions?.doneLast && source.done !== target.done;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = blocked ? "none" : "move";
+  row.classList.add(blocked ? "drop-invalid" : `drop-${dropPlacement(event, row)}`);
+  if (blocked) element("reorder-status").textContent = "Turn off Done last to move Todos between completion groups.";
+});
+
+element("task-list").addEventListener("dragleave", (event) => {
+  if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) clearDropIndicators();
+});
+element("task-list").addEventListener("dragend", clearDrag);
+element("task-list").addEventListener("drop", (event) => {
+  if (!draggedTodo) return;
+  event.preventDefault();
+  const source = draggedTodo;
+  const row = event.target.closest(".task-row");
+  const placement = row ? dropPlacement(event, row) : null;
+  clearDrag();
+  if (row && row.dataset.id !== source.id) reorderTodo(source.id, row.dataset.id, placement, source.date);
+});
+
+element("task-list").addEventListener("keydown", (event) => {
+  const row = event.target.closest(".task-row");
+  if (!row || event.target !== row || busy || selectedDate !== state.currentDate || !event.altKey || event.ctrlKey || event.metaKey || !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+  event.preventDefault();
+  const id = row.dataset.id;
+  const tasks = getVisibleTasks(state.days[state.currentDate], state.listOptions);
+  const source = tasks.find((task) => task.id === id);
+  const group = state.listOptions?.doneLast ? tasks.filter((task) => task.done === source.done) : tasks;
+  const direction = event.key === "ArrowUp" ? -1 : 1;
+  const target = group[group.indexOf(source) + direction];
+  if (!target) {
+    element("reorder-status").textContent = "This Todo is already at the edge of its group.";
+    return;
+  }
+  reorderTodo(id, target.id, direction < 0 ? "before" : "after", selectedDate);
+});
+
 element("add-task-form").addEventListener("submit", (event) => {
   event.preventDefault();
   void perform(async () => {
